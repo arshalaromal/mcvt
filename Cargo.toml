@@ -1,0 +1,7 @@
+[package]
+name = "mcvt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+file-format = "0.29.0"
