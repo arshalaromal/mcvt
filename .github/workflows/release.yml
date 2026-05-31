@@ -1,0 +1,50 @@
+name: Release MCVT
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            bin_name: mcvt
+            release_name: mcvt-linux-amd64
+          - os: windows-latest
+            bin_name: mcvt.exe
+            release_name: mcvt-windows-amd64.exe
+          - os: macos-latest #Apple Silicon (M1/M2) Mac runner
+            bin_name: mcvt
+            release_name: mcvt-macos-apple-silicon-arm64
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Production Binary
+        run: cargo build --release
+
+      - name: Rename Binary (Linux / macOS)
+        if: matrix.os != 'windows-latest'
+        run: mv target/release/${{ matrix.bin_name }} target/release/${{ matrix.release_name }}
+
+      - name: Rename Binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: Rename-Item -Path target/release/${{ matrix.bin_name }} -NewName ${{ matrix.release_name }}
+
+      - name: Publish to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          files: target/release/${{ matrix.release_name }}
+          generate_release_notes: true
