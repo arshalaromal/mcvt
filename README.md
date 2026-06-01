@@ -1,124 +1,154 @@
-
 # MCVT (Multi-format ConVerTer)
 
-MCVT is a unified, thread-safe command-line routing engine for media and document conversions. It abstracts the distinct syntaxes of FFmpeg, ImageMagick, and Pandoc behind a single standardized interface.
+MCVT is a CLI tool for converting media and documents through one simple interface.
 
-Built in Rust, MCVT features magic-byte file detection, concurrent directory batching, recursive folder mapping, and strict process lifecycle management to prevent system resource starvation.
-
----
-
-## 📚 Documentation
-
-Detailed documentation is available in the `docs/` directory:
-* **[User Guide](docs/USER_GUIDE.md):** Comprehensive manual covering all commands, batch processing overrides, and namespaced argument injections.
-* **[Developer & Architecture Guide](docs/ARCHITECTURE.md):** Deep dive into the routing logic, thread-pool caching, technical debt, and system architecture.
+Instead of remembering different command styles for FFmpeg, ImageMagick, and Pandoc, you give MCVT an input and an output, and it figures out the right backend for the job.
 
 ---
 
+## Demo
+
+![MCVT demo](docs/demo.gif)
+
+
+
+---
+
+## Why MCVT
+
+Different tools solve different problems, but their command lines are inconsistent and notoriously bloated.
+
+For example, if you want a video that won't crash hardware decoders (even-pixel dimensions), a high-quality dithered GIF, or a PDF that doesn't consume gigabytes of memory, you usually have to Google and type out something like this:
+
+```bash
+ffmpeg -i input.avi -c:v libx264 -preset medium -crf 16 -pix_fmt yuv420p -vf "bwdif=deint=interlaced,scale=trunc(iw/2)*2:trunc(ih/2)*2" -movflags +faststart output.mp4
+ffmpeg -i input.mp4 -filter_complex "[0:v] fps=15,scale=w=640:h=-1,split [a][b];[a] palettegen [p];[b][p] paletteuse" output.gif
+magick input.jpg -resize "1200x1200>" -quality 100 output.pdf
+```
+
+With MCVT, those optimization templates are built-in. The exact same jobs are just:
+
+```bash
+mcvt input.avi output.mp4
+mcvt input.mp4 output.gif
+mcvt input.jpg output.pdf
+```
+
+That is the main idea: fewer flags, zero Googling, same backend tools.
+
+---
 ## Features
 
-* **Unified Routing:** Automatically identifies domains (Video/Audio, Image, Document) and invokes the correct backend binary.
-* **Magic Byte Detection:** Bypasses spoofed or missing file extensions by reading binary headers.
-* **Parallel Batch Processing:** Utilizes a concurrent worker pool to process massive directory trees, scaling to available CPU cores.
-* **Recursive Directory Mirroring:** Scans deeply nested folder hierarchies and replicates the exact structure in the output destination.
-* **Zombie Process Assassination:** Intercepts system interrupts (`Ctrl+C`) to trace and terminate orphaned background processes (e.g., FFmpeg threads).
-* **Targeted Argument Injection:** Allows users to bypass default optimization templates by injecting raw flags directly into backend processors.
+* One command for video, image, and document conversion
+* Automatic backend selection based on file type
+* Magic-byte detection, so file extensions are not the only signal
+* Batch conversion for directories
+* Recursive folder handling
+* Basic process cleanup on interrupt so leftover backend processes do not keep running
+* Raw backend flag injection when you need full control
 
 ---
 
-## Prerequisites
+## Requirements
 
-MCVT is a routing and execution layer. It requires the following backend binaries to be installed and accessible within your system `PATH`:
+MCVT does not replace FFmpeg, ImageMagick, or Pandoc. It wraps them.
 
-* **FFmpeg:** For Video and Audio domains.
-* **ImageMagick (`magick`):** For Image domains and PDF rasterization.
-* **Pandoc:** For Document domains. *(Note: PDF generation via Pandoc requires a local LaTeX engine like `pdflatex` or `xelatex`).*
+Install these and make sure they are available in your `PATH`:
+
+* **FFmpeg** for video and audio
+* **ImageMagick** (`magick`) for images and PDF rasterization
+* **Pandoc** for documents
+
+For PDF output through Pandoc, you also need a local LaTeX engine such as `pdflatex` or `xelatex`.
 
 ---
 
 ## Installation
 
-MCVT can be installed via pre-compiled standalone binaries or built directly from the Rust source code.
+### Prebuilt binaries
 
-### Option 1: Pre-compiled Binaries (Recommended)
+Download the latest release from GitHub Releases and place the binary somewhere in your `PATH`.
 
-Download the latest executable for your operating system from the **[GitHub Releases](https://github.com/arshalaromal/mcvt/releases)** page.
+* Windows: `mcvt.exe`
+* Linux/macOS: `mcvt`
 
-1. Download the binary matching your OS (`mcvt.exe` for Windows, `mcvt` for Linux/macOS).
-2. Place the file in a directory that is included in your system's `PATH` (e.g., `C:\Program Files\MCVT\` or `/usr/local/bin/`).
-3. *(Linux/macOS only)*: Mark the binary as executable by running `chmod +x mcvt`.
-
-> **⚠️ OS Support Warning:** MCVT is primarily developed and heavily tested on Windows. Linux and macOS binaries are provided as a convenience via automated cross-compilation pipelines.
-
-### Option 2: Build from Source
-
-If you prefer to compile the engine locally or are running a non-standard architecture, ensure you have the [Rust toolchain](https://rustup.rs/) installed.
+On Linux/macOS, make it executable:
 
 ```bash
-git clone https://github.com/yourusername/mcvt.git
-cd mcvt
-cargo build --release
-
+chmod +x mcvt
 ```
 
-The optimized binary will be generated at `target/release/mcvt` (or `mcvt.exe` on Windows). Move this file to your system `PATH` to execute the engine globally.
+### Build from source
+
+```bash
+git clone https://github.com/arshalaromal/mcvt.git
+cd mcvt
+cargo build --release
+```
+
+The binary will be in:
+
+* `target/release/mcvt` on Linux/macOS
+* `target/release/mcvt.exe` on Windows
 
 ---
 
-## Usage Guide (Users)
+## Usage
 
-> **📖 Read the full [User Guide](docs/USER_GUIDE.md) for advanced operations.**
-
-### Standard Operations (Single File)
-
-MCVT requires exactly two positional arguments: input and output. It automatically handles the routing and applies optimized default templates.
+### Single file
 
 ```bash
 mcvt source.mp4 final.mkv
-mcvt graphic.png compressed.jpg
-mcvt essay.docx essay.pdf
-
+mcvt image.png image.jpg
+mcvt document.docx document.pdf
 ```
 
-### Batch Operations (Directory Processing)
+### Folder batch conversion
 
-Passing a directory as the input automatically engages Batch Mode.
+When the input is a directory, MCVT can process files in bulk.
 
 ```bash
-# Convert an entire folder to .mkv
 mcvt ./raw_footage/ ./encoded_footage/ --batch-ext mkv
-
-# Convert only .png files to .jpg recursively (-R)
 mcvt ./assets/ ./processed/ --batch-ext jpg --batch-in png -R
-
 ```
 
-### Overrides & Injection
+### Overrides
 
-Bypass MCVT's automation when necessary using targeted flags.
+Use backend-specific flags when the default behavior is not enough.
 
 ```bash
-# Disable Magic Bytes (trust the file extension)
+# Trust the extension instead of probing the file
 mcvt corrupted.jpg restored.png --no-guess
 
-# Force a specific conversion pathway
+# Force a conversion path
 mcvt animation.mp4 frames.pdf --force video:document
 
-# Inject raw arguments directly into FFmpeg (bypass templates)
+# Pass raw FFmpeg arguments through
 mcvt input.mp4 output.mkv --ffmpeg-out -b:v 1M -vf scale=1280:720
 
-# Restrict CPU threads during a batch job to prevent OS lockup
+# Limit threads during batch jobs
 mcvt ./in/ ./out/ --batch-ext mkv --ffmpeg-out -threads 1
-
 ```
 
-Use `mcvt --help` for the complete list of flags and options.
+Run this for the full option list:
+
+```bash
+mcvt --help
+```
 
 ---
 
-## Architecture (Developers)
 
-> **⚙️ Read the full [Developer & Architecture Guide](docs/ARCHITECTURE.md) for data flow and internal mechanics.**
+## Documentation
+
+More details are in `docs/`:
+
+* [User Guide](docs/USER_GUIDE.md)
+* [Developer & Architecture Guide](docs/ARCHITECTURE.md)
+
+---
+
+## Architecture
 
 ```mermaid
 flowchart LR
@@ -135,47 +165,41 @@ flowchart LR
 
     CLI --> BATCH
     CLI --> ROUTER
-
     BATCH --> ROUTER
     ROUTER --> EXEC
-
     EXEC --> FFMPEG
     EXEC --> IM
     EXEC --> PANDOC
-
     FFMPEG --> PROC
     IM --> PROC
     PANDOC --> PROC
-``` 
+```
 
-MCVT is designed to handle unsafe external C-binaries safely within a multithreaded Rust environment.
+### Implementation notes
 
-* **`router.rs`:** Utilizes the `file_format` crate to read binary headers. Maps inputs to a logical `Domain` (VideoAudio, Image, Document) to prevent routing failures on malformed extensions.
-* **`batch.rs`:** Pre-calculates all relative path structures and creates output directories single-threadedly. It then passes lightweight `(&Cli, &str, &str)` references to the `rayon::par_iter()` pool, ensuring threads spend zero CPU cycles on path manipulation.
-* **`executor.rs`:** Prevents OS scheduler Denial-of-Service (DOS) during batch runs via a `OnceLock<RwLock<HashSet<String>>>`. Threads check binary dependencies (e.g., `ffmpeg --version`) exactly once; subsequent checks return $O(1)$ from the heap.
-* **`main.rs` (Process Management):** Implements a global `ctrlc` tripwire using the `sysinfo` crate. Interrupts scan the OS process tree, identify `parent() == Some(MCVT_PID)`, and execute hard kills on orphaned background C-binaries.
+* `router.rs` reads file headers and maps input files to a conversion domain.
+* `batch.rs` handles directory traversal and output path mapping.
+* `executor.rs` starts backend processes and manages dependency checks.
+* `main.rs` handles interrupt cleanup and process termination.
 
 ---
 
-## Project Roadmap
+## Roadmap
 
-### Completed Core Features
+### Done
 
-* [x] Unified inter-domain routing logic
-* [x] Magic Byte binary header detection
-* [x] Thread-safe Rayon batch processor
-* [x] Recursive directory mapping (`WalkDir`)
-* [x] Global Ctrl+C Zombie Process Assassin
-* [x] Canonical path self-overwrite protection
-* [x] Zero-allocation `Cli` references in batch loops
-* [x] RwLock Dependency Cache
+-[x] Unified routing for multiple file types
+-[x] Magic-byte detection
+-[x] Batch conversion
+-[x] Recursive directory mapping
+-[x] Interrupt cleanup for backend processes
+-[x] Path safety checks
 
-### Technical Debt & Future Features
+### Planned
 
-* [ ] **Runner Struct Refactoring:** Consolidate `FfmpegRunner`, `ImageMagickRunner`, and `PandocRunner` into a single generic struct implementing a `ToolRunner` Trait (DRY principle).
-* [ ] **Cache Stampede Fix:** Implement an atomic state machine (`Pending`, `Verified`) inside the `RwLock` to prevent the initial $N$-thread race condition on startup.
-* [ ] **Batch Collision Handling:** Add a `--skip-existing` flag to prevent hardcoded `-y` binary overwrites in batch mode.
-* [ ] **Externalized Templates:** Move hardcoded optimization chains (e.g., CRF values, scaling logic) out of `templates.rs` and into a deserialized `~/.config/mcvt/templates.toml` file.
-* [ ] **Single-File Progress Parsing:** Hook into `stdout` streams of underlying binaries to provide accurate percentage-based progress bars for single-file operations.
+-[ ] A single shared runner abstraction for all backends
+-[ ] Better startup caching for dependency checks
+-[ ] `--skip-existing` for batch mode
+-[ ] External config for conversion templates
+-[ ] Progress parsing for single-file conversions
 
-```

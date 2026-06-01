@@ -20,7 +20,7 @@ mod templates;
     name = "MCVT",
     version = "0.1.0",
     author = "Arshal Aromal",
-    about = "Multi-Format Conversion Engine",
+    about = "Multi-format ConVerTer",
     long_about = "MCVT acts as a smart layer over FFmpeg, ImageMagick, and Pandoc. It utilizes Magic Byte detection for accurate routing, applies context-aware optimization templates, and supports highly concurrent, recursive directory batch processing."
 )]
 pub struct Cli {
