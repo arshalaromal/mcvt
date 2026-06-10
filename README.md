@@ -14,7 +14,7 @@ Instead of remembering different command styles for FFmpeg, ImageMagick, and Pan
 
 ---
 
-## Why MCVT
+## Why MCVT?
 
 Different tools solve different problems, but their command lines are inconsistent and notoriously bloated.
 
