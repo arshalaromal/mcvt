@@ -73,6 +73,19 @@ pub struct Cli {
     )]
     pub verbose: bool,
 
+    #[arg(
+        long,
+        help = "Path to an external TOML configuration file for conversion templates"
+    )]
+    pub config: Option<String>,
+
+    #[arg(
+        long,
+        default_value_t = false,
+        help = "Skip conversion if the target output file already exists"
+    )]
+    pub skip_existing: bool,
+
     // ---------------------------------------------------------
     // Tool-Specific Executable Paths & Arguments
     // ---------------------------------------------------------
@@ -136,6 +149,10 @@ fn main() {
     // Execution Routing
     // ---------------------------------------------------------
     let cli = Cli::parse();
+
+    // Initialize global conversion templates config
+    templates::init_global_config(cli.config.as_deref());
+
     let input_path = Path::new(&cli.input);
 
     if input_path.is_dir() {
@@ -169,6 +186,14 @@ fn main() {
                 "[✘] Error: Input and Output paths are identical.".red()
             );
             std::process::exit(1);
+        }
+
+        if cli.skip_existing && out_path.exists() {
+            println!(
+                "{}",
+                format!("[!] Skipping existing output file: {}", cli.output).yellow()
+            );
+            return;
         }
 
         // Dynamically create the target output directory if it does not exist

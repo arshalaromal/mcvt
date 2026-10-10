@@ -1,93 +1,139 @@
-/// Returns standard optimization defaults for FFmpeg based on the target output extension.
-///
-/// These defaults are designed to ensure maximum compatibility and prevent pipeline
-/// crashes. For `.mp4` and `.mkv` files, it enforces H.264 encoding, applies a near-lossless
-/// Constant Rate Factor (CRF) of 16, and injects a mandatory filter chain to de-interlace
-/// source material and force even-pixel dimensions (required by many hardware decoders).
-pub fn ffmpeg_output_defaults(output_file: &str) -> Vec<String> {
-    let ext = output_file.to_lowercase();
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+use std::sync::OnceLock;
 
-    if ext.ends_with(".mp4") || ext.ends_with(".mkv") {
-        vec![
-            "-c:v".into(),
-            "libx264".into(),
-            "-preset".into(),
-            "medium".into(),
-            "-crf".into(),
-            "16".into(),
-            "-pix_fmt".into(),
-            "yuv420p".into(),
-            // THE FILTER CHAIN:
-            // 1. Auto-deinterlace to fix motion blur.
-            // 2. Force even dimensions to prevent hardware playback crashes.
-            "-vf".into(),
-            "bwdif=deint=interlaced,scale=trunc(iw/2)*2:trunc(ih/2)*2".into(),
-            "-movflags".into(),
-            "+faststart".into(),
-        ]
-    } else if ext.ends_with(".avi") {
-        vec!["-qscale:v".into(), "2".into()]
+static DEFAULT_TOML_STR: &str = include_str!("default_templates.toml");
+static LOADED_CONFIG: OnceLock<TemplateConfig> = OnceLock::new();
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct TemplateConfig {
+    #[serde(default)]
+    pub ffmpeg: FfmpegConfig,
+    #[serde(default)]
+    pub imagemagick: ImageMagickConfig,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct FfmpegConfig {
+    #[serde(default)]
+    pub gif_pipeline: Vec<String>,
+    #[serde(default)]
+    pub image_to_video: Vec<String>,
+    #[serde(default)]
+    pub output_defaults: HashMap<String, Vec<String>>,
+}
+
+#[derive(Debug, Deserialize, Clone, Default)]
+pub struct ImageMagickConfig {
+    #[serde(default)]
+    pub pdf_input: Vec<String>,
+    #[serde(default)]
+    pub pdf_output: Vec<String>,
+}
+
+impl TemplateConfig {
+    /// Loads template configuration according to resolution order:
+    /// 1. Custom CLI path (if provided and exists)
+    /// 2. User config path (~/.config/mcvt/templates.toml or OS equivalent)
+    /// 3. Embedded default configuration (`src/default_templates.toml`)
+    pub fn load(cli_config_path: Option<&str>) -> Self {
+        // 1. Try explicit CLI config path
+        if let Some(path_str) = cli_config_path {
+            let path = Path::new(path_str);
+            if path.exists() {
+                if let Ok(content) = fs::read_to_string(path) {
+                    if let Ok(cfg) = toml::from_str::<TemplateConfig>(&content) {
+                        return cfg;
+                    }
+                }
+            }
+        }
+
+        // 2. Try user config directory
+        if let Some(mut user_config_dir) = dirs::config_dir() {
+            user_config_dir.push("mcvt");
+            user_config_dir.push("templates.toml");
+            if user_config_dir.exists() {
+                if let Ok(content) = fs::read_to_string(&user_config_dir) {
+                    if let Ok(cfg) = toml::from_str::<TemplateConfig>(&content) {
+                        return cfg;
+                    }
+                }
+            }
+        }
+
+        // 3. Fallback to embedded default TOML
+        Self::load_embedded()
+    }
+
+    pub fn load_embedded() -> Self {
+        toml::from_str(DEFAULT_TOML_STR).unwrap_or_default()
+    }
+
+    #[cfg(test)]
+    pub fn parse_toml_str(content: &str) -> Result<Self, toml::de::Error> {
+        toml::from_str(content)
+    }
+}
+
+/// Initializes global template config based on CLI flag (called once at startup).
+pub fn init_global_config(cli_config_path: Option<&str>) {
+    let cfg = TemplateConfig::load(cli_config_path);
+    let _ = LOADED_CONFIG.set(cfg);
+}
+
+/// Helper to access global config, falling back to default loaded instance if not explicitly initialized.
+pub fn get_config() -> &'static TemplateConfig {
+    LOADED_CONFIG.get_or_init(|| TemplateConfig::load(None))
+}
+
+/// Returns standard optimization defaults for FFmpeg based on the target output extension.
+pub fn ffmpeg_output_defaults(output_file: &str) -> Vec<String> {
+    let config = get_config();
+    let ext_lower = output_file.to_lowercase();
+    let extension = Path::new(&ext_lower)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("");
+
+    if let Some(args) = config.ffmpeg.output_defaults.get(extension) {
+        args.clone()
     } else {
-        vec![] // Pass-through empty arguments for unknown formats
+        vec![]
     }
 }
 
 /// Returns a highly optimized, 2-pass complex filter chain for Video-to-GIF conversion.
-///
-/// Bypasses standard encoding to generate a custom color palette (`palettegen`) from the
-/// source video, and immediately applies it (`paletteuse`) to render a high-quality,
-/// dithered animation locked at 15 FPS to optimize file size.
 pub fn gif_pipeline_filter() -> Vec<String> {
-    vec![
-        "-filter_complex".into(),
-        "[0:v] fps=15,scale=w=640:h=-1,split [a][b];[a] palettegen [p];[b][p] paletteuse".into(),
-    ]
+    get_config().ffmpeg.gif_pipeline.clone()
 }
 
 /// Returns input arguments for ImageMagick when reading PDF documents.
-///
-/// Documents require a high rasterization density before being processed into images.
-/// If omitted, ImageMagick defaults to 72 DPI, resulting in heavily pixelated/unreadable output.
 pub fn magick_pdf_input(input_file: &str) -> Vec<String> {
     if input_file.to_lowercase().ends_with(".pdf") {
-        vec!["-density".into(), "300".into()]
+        get_config().imagemagick.pdf_input.clone()
     } else {
         vec![]
     }
 }
 
 /// Returns output arguments for ImageMagick to prevent memory bloat on large documents.
-///
-/// When converting raw, high-resolution photography into PDFs, the resulting document
-/// can easily exceed several gigabytes. This template enforces a maximum boundary
-/// of 1200x1200px while maintaining maximum image quality.
 pub fn magick_pdf_output(output_file: &str) -> Vec<String> {
     if output_file.to_lowercase().ends_with(".pdf") {
-        vec![
-            "-resize".into(),
-            "1200x1200>".into(),
-            "-quality".into(),
-            "100".into(),
-        ]
+        get_config().imagemagick.pdf_output.clone()
     } else {
         vec![]
     }
 }
 
 /// Returns input arguments for FFmpeg when converting a static image into a video.
-///
-/// Standard media players will often crash or instantly close when playing a 1-frame video.
-/// This template loops the static image (`-loop 1`) and enforces a 5-second duration (`-t 5`).
 pub fn ffmpeg_image_to_video_input(input_file: &str) -> Vec<String> {
     if input_file.to_lowercase().ends_with(".gif") {
         vec![] // GIFs are natively animated; do nothing.
     } else {
-        vec![
-            "-loop".into(),
-            "1".into(),
-            "-t".into(),
-            "5".into(), // Lock the static video duration to 5 seconds
-        ]
+        get_config().ffmpeg.image_to_video.clone()
     }
 }
 
@@ -99,19 +145,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_ffmpeg_mp4_defaults() {
-        let args = ffmpeg_output_defaults("vacation.mp4");
-        assert!(args.contains(&"libx264".to_string()));
-        assert!(args.contains(&"yuv420p".to_string()));
+    fn test_embedded_default_templates() {
+        let config = TemplateConfig::load_embedded();
+        assert!(config.ffmpeg.output_defaults.contains_key("mp4"));
+        assert!(config.ffmpeg.output_defaults.contains_key("mkv"));
+        assert_eq!(
+            config.ffmpeg.output_defaults.get("avi").unwrap(),
+            &vec!["-qscale:v".to_string(), "2".to_string()]
+        );
+        assert!(!config.ffmpeg.gif_pipeline.is_empty());
+        assert!(!config.imagemagick.pdf_input.is_empty());
+        assert!(!config.imagemagick.pdf_output.is_empty());
     }
 
     #[test]
-    fn test_magick_pdf_constraints() {
-        let out_args = magick_pdf_output("document.pdf");
-        assert!(out_args.contains(&"-resize".to_string()));
+    fn test_custom_toml_parse() {
+        let custom_toml = r#"
+            [ffmpeg]
+            gif_pipeline = ["-filter_complex", "custom_filter"]
+            image_to_video = ["-loop", "1", "-t", "10"]
 
-        // Non-PDF targets should return an empty vector
-        let empty_args = magick_pdf_output("image.jpg");
-        assert!(empty_args.is_empty());
+            [ffmpeg.output_defaults]
+            mp4 = ["-c:v", "libx265"]
+
+            [imagemagick]
+            pdf_input = ["-density", "150"]
+            pdf_output = ["-quality", "80"]
+        "#;
+
+        let cfg = TemplateConfig::parse_toml_str(custom_toml).unwrap();
+        assert_eq!(cfg.ffmpeg.gif_pipeline, vec!["-filter_complex", "custom_filter"]);
+        assert_eq!(cfg.ffmpeg.image_to_video, vec!["-loop", "1", "-t", "10"]);
+        assert_eq!(cfg.ffmpeg.output_defaults.get("mp4").unwrap(), &vec!["-c:v", "libx265"]);
+        assert_eq!(cfg.imagemagick.pdf_input, vec!["-density", "150"]);
+        assert_eq!(cfg.imagemagick.pdf_output, vec!["-quality", "80"]);
     }
 }

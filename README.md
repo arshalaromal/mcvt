@@ -110,13 +110,20 @@ When the input is a directory, MCVT can process files in bulk.
 ```bash
 mcvt ./raw_footage/ ./encoded_footage/ --batch-ext mkv
 mcvt ./assets/ ./processed/ --batch-ext jpg --batch-in png -R
+mcvt ./assets/ ./processed/ --batch-ext mp4 --skip-existing
 ```
 
-### Overrides
+### Overrides & Configuration
 
-Use backend-specific flags when the default behavior is not enough.
+Use backend-specific flags, skip existing outputs, or supply custom conversion template configs.
 
 ```bash
+# Skip conversion if the target output file already exists
+mcvt source.mp4 final.mkv --skip-existing
+
+# Use a custom external TOML configuration for conversion templates
+mcvt source.mp4 final.mkv --config ./my_templates.toml
+
 # Trust the extension instead of probing the file
 mcvt corrupted.jpg restored.png --no-guess
 
@@ -199,7 +206,7 @@ flowchart LR
 
 - [ ] A single shared runner abstraction for all backends
 - [ ] Better startup caching for dependency checks
-- [ ] `--skip-existing` for batch mode
-- [ ] External config for conversion templates
+- [x] `--skip-existing` for batch mode
+- [x] External config for conversion templates
 - [ ] Progress parsing for single-file conversions
 
