@@ -201,12 +201,12 @@ flowchart LR
 - [x] Recursive directory mapping
 - [x] Interrupt cleanup for backend processes
 - [x] Path safety checks
+- [x] `--skip-existing` for batch mode
+- [x] External config for conversion templates
 
 ### Planned
 
 - [ ] A single shared runner abstraction for all backends
 - [ ] Better startup caching for dependency checks
-- [x] `--skip-existing` for batch mode
-- [x] External config for conversion templates
 - [ ] Progress parsing for single-file conversions
 
