@@ -1,0 +1,12 @@
+[ffmpeg]
+gif_pipeline = ["-filter_complex", "[0:v] fps=15,scale=w=640:h=-1,split [a][b];[a] palettegen [p];[b][p] paletteuse"]
+image_to_video = ["-loop", "1", "-t", "5"]
+
+[ffmpeg.output_defaults]
+mp4 = ["-c:v", "libx264", "-preset", "medium", "-crf", "16", "-pix_fmt", "yuv420p", "-vf", "bwdif=deint=interlaced,scale=trunc(iw/2)*2:trunc(ih/2)*2", "-movflags", "+faststart"]
+mkv = ["-c:v", "libx264", "-preset", "medium", "-crf", "16", "-pix_fmt", "yuv420p", "-vf", "bwdif=deint=interlaced,scale=trunc(iw/2)*2:trunc(ih/2)*2", "-movflags", "+faststart"]
+avi = ["-qscale:v", "2"]
+
+[imagemagick]
+pdf_input = ["-density", "300"]
+pdf_output = ["-resize", "1200x1200>", "-quality", "100"]

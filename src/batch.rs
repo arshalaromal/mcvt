@@ -110,14 +110,26 @@ pub fn process_directory(cli: Cli) -> Result<(), String> {
             }
 
             if output_file_path.exists() {
-                println!(
-                    "{}",
-                    format!(
-                        "[!] Warning: Overwriting existing file: [{}]",
-                        file_name_display
-                    )
-                    .yellow()
-                );
+                if cli.skip_existing {
+                    println!(
+                        "{}",
+                        format!(
+                            "[!] Skipping existing output file: [{}]",
+                            file_name_display
+                        )
+                        .yellow()
+                    );
+                    continue;
+                } else {
+                    println!(
+                        "{}",
+                        format!(
+                            "[!] Warning: Overwriting existing file: [{}]",
+                            file_name_display
+                        )
+                        .yellow()
+                    );
+                }
             }
 
             // Stage validated paths for thread distribution
