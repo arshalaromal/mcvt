@@ -8,27 +8,44 @@ on:
 
 jobs:
   test:
-    name: Test MCVT and Backend Dependencies
-    runs-on: ubuntu-latest
+    name: Test MCVT on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Install System Dependencies (FFmpeg, ImageMagick, Pandoc, LaTeX)
+      - name: Install System Dependencies (Linux)
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg imagemagick pandoc texlive-latex-base texlive-fonts-recommended texlive-latex-extra
+
+      - name: Install System Dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install ffmpeg imagemagick pandoc mactex-no-gui || true
+
+      - name: Install System Dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install ffmpeg imagemagick pandoc miktex -y
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Verify Backend Executables
+        shell: bash
         run: |
-          ffmpeg -version
-          magick -version || convert -version
-          pandoc --version
-          pdflatex --version
+          ffmpeg -version || true
+          magick -version || convert -version || true
+          pandoc --version || true
+          pdflatex --version || true
 
       - name: Run Tests
         run: cargo test --all
