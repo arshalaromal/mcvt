@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    name: Test MCVT and Backend Dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies (FFmpeg, ImageMagick, Pandoc, LaTeX)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg imagemagick pandoc texlive-latex-base texlive-fonts-recommended texlive-latex-extra
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Verify Backend Executables
+        run: |
+          ffmpeg -version
+          magick -version || convert -version
+          pandoc -version
+          pdflatex -version
+
+      - name: Run Tests
+        run: cargo test --all
